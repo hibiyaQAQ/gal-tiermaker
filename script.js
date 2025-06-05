@@ -5,72 +5,140 @@ class ImageCacheManager {
         this.dbVersion = 1;
         this.storeName = 'images';
         this.db = null;
-        this.initDB();
+        // 不在构造函数中立即初始化，而是在需要时初始化
     }
 
     async initDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(this.dbName, this.dbVersion);
-            
-            request.onerror = () => {
-                console.error('IndexedDB初始化失败:', request.error);
-                reject(request.error);
-            };
-            
-            request.onsuccess = () => {
-                this.db = request.result;
-                console.log('IndexedDB初始化成功');
-                resolve(this.db);
-            };
-            
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                if (!db.objectStoreNames.contains(this.storeName)) {
-                    const store = db.createObjectStore(this.storeName, { keyPath: 'url' });
-                    store.createIndex('timestamp', 'timestamp', { unique: false });
-                    console.log('IndexedDB存储结构创建成功');
+        try {
+            console.log('开始初始化IndexedDB...');
+            return new Promise((resolve, reject) => {
+                if (!window.indexedDB) {
+                    console.error('浏览器不支持IndexedDB');
+                    reject(new Error('浏览器不支持IndexedDB'));
+                    return;
                 }
-            };
-        });
+                
+                const request = indexedDB.open(this.dbName, this.dbVersion);
+                
+                request.onerror = () => {
+                    console.error('IndexedDB初始化失败:', request.error);
+                    reject(request.error);
+                };
+                
+                request.onsuccess = () => {
+                    this.db = request.result;
+                    console.log('✅ IndexedDB初始化成功');
+                    resolve(this.db);
+                };
+                
+                request.onupgradeneeded = (event) => {
+                    console.log('🔧 IndexedDB需要升级，创建存储结构...');
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(this.storeName)) {
+                        const store = db.createObjectStore(this.storeName, { keyPath: 'url' });
+                        store.createIndex('timestamp', 'timestamp', { unique: false });
+                        console.log('✅ IndexedDB存储结构创建成功');
+                    }
+                };
+            });
+        } catch (error) {
+            console.error('IndexedDB初始化异常:', error);
+            throw error;
+        }
     }
 
     async cacheImage(url) {
-        if (!this.db) {
-            await this.initDB();
-        }
-
+        console.log('🔄 开始缓存图片:', url);
+        
         try {
+            // 确保数据库已初始化
+            if (!this.db) {
+                console.log('数据库未初始化，正在初始化...');
+                await this.initDB();
+            }
+
             // 检查是否已经缓存
             const cached = await this.getImage(url);
             if (cached) {
-                console.log('图片已缓存:', url);
+                console.log('✅ 图片已缓存，直接返回:', url);
                 return cached.dataUrl;
             }
 
-            console.log('开始缓存图片:', url);
+            console.log('📥 开始下载图片:', url);
             
-            // 获取图片数据
-            const response = await fetch(url, {
-                mode: 'cors',
-                credentials: 'omit'
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+            // 尝试多种方式获取图片数据
+            let blob;
+            try {
+                const response = await fetch(url, {
+                    mode: 'cors',
+                    credentials: 'omit'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                blob = await response.blob();
+                console.log('✅ 通过fetch下载成功，大小:', blob.size, 'bytes');
+            } catch (fetchError) {
+                console.warn('fetch失败，尝试其他方法:', fetchError);
+                // 如果fetch失败，尝试使用Image + Canvas的方式
+                return await this.cacheImageViaCanvas(url);
             }
             
-            const blob = await response.blob();
             const dataUrl = await this.blobToDataUrl(blob);
             
             // 存储到IndexedDB
             await this.storeImage(url, dataUrl, blob.size);
-            console.log('图片缓存成功:', url);
+            console.log('✅ 图片缓存成功:', url);
             
             return dataUrl;
         } catch (error) {
-            console.warn('图片缓存失败:', url, error);
+            console.error('❌ 图片缓存失败:', url, error);
             return url; // 返回原始URL作为备用
         }
+    }
+
+    // 备用缓存方法：使用Image + Canvas
+    async cacheImageViaCanvas(url) {
+        return new Promise((resolve, reject) => {
+            console.log('🎨 尝试通过Canvas缓存图片:', url);
+            
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    
+                    ctx.drawImage(img, 0, 0);
+                    const dataUrl = canvas.toDataURL('image/png');
+                    
+                    // 估算大小并存储
+                    const estimatedSize = dataUrl.length * 0.75; // base64的大概大小
+                    this.storeImage(url, dataUrl, estimatedSize).then(() => {
+                        console.log('✅ 通过Canvas缓存成功:', url);
+                        resolve(dataUrl);
+                    }).catch(error => {
+                        console.warn('Canvas缓存存储失败:', error);
+                        resolve(dataUrl); // 即使存储失败，也返回dataUrl
+                    });
+                } catch (error) {
+                    console.warn('Canvas转换失败:', error);
+                    resolve(url); // 返回原始URL
+                }
+            };
+            
+            img.onerror = () => {
+                console.warn('Image加载失败:', url);
+                resolve(url); // 返回原始URL
+            };
+            
+            img.src = url;
+        });
     }
 
     async getImage(url) {
@@ -158,7 +226,27 @@ class ImageCacheManager {
 // 全局图片缓存管理器
 const imageCache = new ImageCacheManager();
 
-document.addEventListener('DOMContentLoaded', () => {
+// 初始化缓存系统
+async function initializeCacheSystem() {
+    try {
+        console.log('🚀 初始化图片缓存系统...');
+        await imageCache.initDB();
+        const stats = await imageCache.getCacheStats();
+        console.log(`📊 缓存系统已就绪，当前缓存: ${stats.count} 张图片`);
+        
+        // 清理7天前的缓存
+        await imageCache.cleanOldCache();
+        
+        return true;
+    } catch (error) {
+        console.error('❌ 缓存系统初始化失败:', error);
+        return false;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // 先初始化缓存系统
+    await initializeCacheSystem();
     const tierListContainer = document.getElementById('tier-list-container');
     const addTierBtn = document.getElementById('add-tier-btn');
     const imageUploadInput = document.getElementById('image-upload-input');
@@ -898,6 +986,22 @@ document.addEventListener('DOMContentLoaded', () => {
     cleanOldCacheBtn.addEventListener('click', cleanOldCache);
     clearAllCacheBtn.addEventListener('click', clearAllCache);
 
+    // 添加测试缓存功能的按钮（调试用）
+    window.testImageCache = async function() {
+        console.log('🧪 开始测试缓存功能...');
+        const testUrl = 'https://lain.bgm.tv/pic/cover/l/5c/9c/1_5B9cb.jpg'; // 一个测试图片
+        try {
+            const result = await imageCache.cacheImage(testUrl);
+            console.log('🧪 测试结果:', result.startsWith('data:') ? '成功' : '失败');
+            const stats = await imageCache.getCacheStats();
+            console.log('🧪 当前缓存统计:', stats);
+        } catch (error) {
+            console.error('🧪 测试失败:', error);
+        }
+    };
+
+    console.log('💡 要测试缓存功能，请在控制台运行: testImageCache()');
+
 
     // --- Bangumi Auth Logic ---
     function handleBangumiLogin() {
@@ -1117,8 +1221,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         try {
                             // 缓存图片
-                            console.log('缓存Bangumi图片:', imageUrlForTier);
+                            console.log('🎯 点击添加Bangumi图片:', imageUrlForTier);
                             const cachedUrl = await imageCache.cacheImage(imageUrlForTier);
+                            console.log('🔗 缓存结果URL:', cachedUrl.startsWith('data:') ? 'data URI (成功)' : '原始URL (失败)');
                             
                             // 使用缓存的URL创建图片元素
                             const newImageElement = createImageElement(cachedUrl);
