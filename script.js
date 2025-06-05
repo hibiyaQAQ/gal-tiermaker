@@ -612,6 +612,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                     saveTiers();
                 }
             }
+            
+            // Check if image is in sidebar pool, also remove from main pool
+            const sidebarPool = container.closest('.sidebar-image-pool-content');
+            if (sidebarPool) {
+                // Find and remove from main pool too
+                const mainPoolImages = Array.from(imagePool.children);
+                mainPoolImages.forEach(mainContainer => {
+                    const mainImg = mainContainer.querySelector('img');
+                    if (mainImg && mainImg.src === src) {
+                        mainContainer.remove();
+                    }
+                });
+            }
+            
+            // Check if image is in main pool, also remove from sidebar pool
+            const mainPool = container.closest('#image-pool');
+            if (mainPool && sidebarPoolOpen) {
+                const sidebarImages = Array.from(sidebarImagePoolContent.children);
+                sidebarImages.forEach(sidebarContainer => {
+                    const sidebarImg = sidebarContainer.querySelector('img');
+                    if (sidebarImg && sidebarImg.src === src) {
+                        sidebarContainer.remove();
+                    }
+                });
+            }
+            
             // Remove from DOM
             container.remove();
             
@@ -816,6 +842,129 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Apply initial settings
     initializeGlobalImageMode();
+
+    // Sidebar image pool functionality
+    const toggleSidebarPoolBtn = document.getElementById('toggle-sidebar-pool-btn');
+    const sidebarImagePool = document.getElementById('sidebar-image-pool');
+    const sidebarImagePoolContent = document.getElementById('sidebar-image-pool-content');
+    const closeSidebarPoolBtn = document.getElementById('close-sidebar-pool-btn');
+    let sidebarPoolOpen = true;
+
+    function toggleSidebarPool() {
+        sidebarPoolOpen = !sidebarPoolOpen;
+        if (sidebarPoolOpen) {
+            sidebarImagePool.style.display = 'flex';
+            setTimeout(() => {
+                sidebarImagePool.classList.add('open');
+            }, 10);
+            toggleSidebarPoolBtn.textContent = '关闭侧边池';
+            toggleSidebarPoolBtn.classList.add('active');
+            syncSidebarPool();
+        } else {
+            sidebarImagePool.classList.remove('open');
+            setTimeout(() => {
+                sidebarImagePool.style.display = 'none';
+            }, 300);
+            toggleSidebarPoolBtn.textContent = '侧边图片池';
+            toggleSidebarPoolBtn.classList.remove('active');
+        }
+    }
+
+    function syncSidebarPool() {
+        if (!sidebarPoolOpen) return;
+        
+        // 清空侧边图片池
+        sidebarImagePoolContent.innerHTML = '';
+        
+        // 复制主图片池中的所有图片到侧边图片池
+        const mainPoolImages = imagePool.children;
+        Array.from(mainPoolImages).forEach(imageContainer => {
+            const img = imageContainer.querySelector('img');
+            if (img) {
+                const clonedContainer = createImageElement(img.src);
+                sidebarImagePoolContent.appendChild(clonedContainer);
+            }
+        });
+        
+        // 为侧边图片池中的图片添加拖拽监听器
+        addDragListenersToImages();
+    }
+
+    // 监听主图片池的变化，同步到侧边图片池
+    const observeMainPool = new MutationObserver(() => {
+        if (sidebarPoolOpen) {
+            syncSidebarPool();
+        }
+    });
+
+    observeMainPool.observe(imagePool, {
+        childList: true,
+        subtree: true
+    });
+
+    // 为侧边图片池添加拖拽支持
+    sidebarImagePoolContent.addEventListener('dragover', allowDrop);
+    sidebarImagePoolContent.addEventListener('drop', (event) => {
+        event.preventDefault();
+        if (draggedImage) {
+            const sourceTierElement = draggedImage.closest('.tier');
+            const imgElement = draggedImage.querySelector('img');
+            const imageSrc = imgElement ? imgElement.src : null;
+            
+            if (sourceTierElement && imageSrc) { 
+                const sourceTierId = parseInt(sourceTierElement.dataset.tierId);
+                const sourceTier = tiers.find(t => t.id === sourceTierId);
+                if (sourceTier) {
+                    sourceTier.images = sourceTier.images.filter(img => img !== imageSrc);
+                }
+                draggedImage.remove(); 
+                
+                // 添加到主图片池（会自动同步到侧边池）
+                if (!Array.from(imagePool.children).some(container => {
+                    const img = container.querySelector('img');
+                    return img && img.src === imageSrc;
+                })) {
+                    imagePool.appendChild(draggedImage);
+                }
+                saveTiers();
+                renderTiers();
+                
+                setTimeout(() => {
+                    if (sourceTierElement) {
+                        adjustTierHeight(sourceTierElement);
+                    }
+                }, 50); 
+            } else {
+                // 如果图片已经在图片池中，不需要重复添加
+                if (!imagePool.contains(draggedImage) && !sidebarImagePoolContent.contains(draggedImage)) {
+                    imagePool.appendChild(draggedImage);
+                }
+            }
+            const draggingImg = draggedImage.querySelector('img');
+            if (draggingImg) {
+                draggingImg.classList.remove('dragging');
+            }
+            draggedImage = null;
+        }
+    });
+
+    // Initialize sidebar pool as open
+    function initializeSidebarPool() {
+        sidebarImagePool.style.display = 'flex';
+        sidebarImagePool.classList.add('open');
+        toggleSidebarPoolBtn.textContent = '关闭侧边池';
+        toggleSidebarPoolBtn.classList.add('active');
+        // 延迟同步，确保主图片池已经加载
+        setTimeout(() => {
+            syncSidebarPool();
+        }, 100);
+    }
+
+    // Initialize sidebar pool on page load
+    initializeSidebarPool();
+
+    toggleSidebarPoolBtn.addEventListener('click', toggleSidebarPool);
+    closeSidebarPoolBtn.addEventListener('click', toggleSidebarPool);
 
     globalStretchMode.addEventListener('change', () => {
         if (globalStretchMode.checked) {
