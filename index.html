@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TierMaker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>我的 Tier List</h1>
+    </header>
+    <main>
+        <div class="controls">
+            <button id="add-tier-btn">添加级别</button>
+            <input type="file" id="image-upload-input" multiple accept="image/*">
+            <label for="image-upload-input" class="button-like">上传图片</label>
+        </div>
+
+        <div class="bangumi-controls">
+            <button id="bangumi-login-btn">使用 Bangumi 登录</button>
+            <div id="bangumi-user-info" style="display: none;">
+                <span id="bangumi-username-text">欢迎, <span id="bangumi-username"></span>!</span>
+                <button id="bangumi-logout-btn">登出</button>
+            </div>
+            <div class="nsfw-toggle" style="display: none;">
+                <label for="nsfw-checkbox">启用 NSFW 内容:</label>
+                <input type="checkbox" id="nsfw-checkbox">
+            </div>
+        </div>
+
+        <div class="bangumi-search-controls">
+            <input type="text" id="bangumi-search-input" placeholder="通过 Bangumi 搜索游戏名...">
+            <button id="bangumi-search-btn">搜索</button>
+        </div>
+        <div id="bangumi-results-container">
+            </div>
+
+        <div id="tier-list-container">
+            </div>
+        <div id="pinned-images-container">
+            <h2>固定图片</h2>
+            <div id="image-pool" class="image-pool">
+                </div>
+        </div>
+    </main>
+    <footer>
+        <p>可部署到 GitHub Pages & Deno</p>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html> 
