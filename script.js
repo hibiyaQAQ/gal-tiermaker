@@ -318,6 +318,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             tierListContainer.appendChild(tierElement);
         });
         addDragListenersToImages();
+        
+        // 渲染完成后，为所有梯队重新调整高度
+        setTimeout(() => {
+            document.querySelectorAll('.tier').forEach(tierElement => {
+                if (tierElement._checkHeight) {
+                    tierElement._checkHeight();
+                }
+            });
+        }, 20);
     }
 
     function createTierElement(tier) {
@@ -346,7 +355,112 @@ document.addEventListener('DOMContentLoaded', async () => {
         tierElement.appendChild(labelContainer);
         tierElement.appendChild(imagesContainer);
         tierElement.appendChild(controlsContainer);
+
+        // 添加动态高度调整
+        adjustTierHeight(tierElement);
+
         return tierElement;
+    }
+
+    // 新增：动态调整梯队高度的函数
+    function adjustTierHeight(tierElement) {
+        const imagesContainer = tierElement.querySelector('.tier-images');
+        const labelContainer = tierElement.querySelector('.tier-label');
+        const controlsContainer = tierElement.querySelector('.tier-controls');
+        
+        const checkAndSetHeight = () => {
+            // 计算图片内容的实际高度
+            const images = imagesContainer.querySelectorAll('.draggable-image');
+            if (images.length === 0) {
+                // 没有图片时，使用最小高度
+                const minHeight = 120;
+                labelContainer.style.height = minHeight + 'px';
+                controlsContainer.style.height = minHeight + 'px';
+                return;
+            }
+            
+            // 方法1：使用实际内容高度（最可靠）
+            // 临时移除高度限制，让内容自然布局
+            imagesContainer.style.height = 'auto';
+            
+            // 强制重新布局
+            imagesContainer.offsetHeight;
+            
+            // 获取实际内容高度
+            const actualContentHeight = imagesContainer.scrollHeight;
+            const containerStyle = window.getComputedStyle(imagesContainer);
+            const paddingTop = parseFloat(containerStyle.paddingTop) || 0;
+            const paddingBottom = parseFloat(containerStyle.paddingBottom) || 0;
+            
+            // 计算最终高度（确保不小于120px）
+            const finalHeight = Math.max(actualContentHeight, 120);
+            
+            // 方法2：精确的理论计算作为验证
+            const paddingLeft = parseFloat(containerStyle.paddingLeft) || 0;
+            const paddingRight = parseFloat(containerStyle.paddingRight) || 0;
+            const availableWidth = imagesContainer.clientWidth - paddingLeft - paddingRight;
+            
+            // 更精确的计算每行图片数
+            let imagesPerRow = 1;
+            if (availableWidth > 0) {
+                imagesPerRow = Math.floor(availableWidth / 120);
+                // 如果计算出0，说明容器太窄，至少放1张
+                if (imagesPerRow === 0) imagesPerRow = 1;
+            }
+            
+            const theoreticalRows = Math.ceil(images.length / imagesPerRow);
+            const theoreticalHeight = Math.max(theoreticalRows * 120 + paddingTop + paddingBottom, 120);
+            
+            // 使用实际高度和理论高度中较合理的那个
+            // 如果两者差异很大，可能是布局还没稳定，使用理论值
+            let calculatedHeight = finalHeight;
+            if (Math.abs(finalHeight - theoreticalHeight) > 30) {
+                calculatedHeight = theoreticalHeight;
+            }
+            
+            // 调试信息
+            if (window.DEBUG_TIER_HEIGHT) {
+                console.log('Height calculation:', {
+                    imagesCount: images.length,
+                    actualContentHeight,
+                    theoreticalHeight,
+                    finalHeight: calculatedHeight,
+                    availableWidth,
+                    imagesPerRow,
+                    theoreticalRows,
+                    containerClientWidth: imagesContainer.clientWidth,
+                    padding: { top: paddingTop, bottom: paddingBottom, left: paddingLeft, right: paddingRight }
+                });
+            }
+            
+            // 同步所有元素的高度
+            labelContainer.style.height = calculatedHeight + 'px';
+            controlsContainer.style.height = calculatedHeight + 'px';
+        };
+        
+        // 使用ResizeObserver监听图片容器宽度变化
+        if (window.ResizeObserver) {
+            const resizeObserver = new ResizeObserver(() => {
+                checkAndSetHeight();
+            });
+            resizeObserver.observe(imagesContainer);
+        }
+        
+        // 初始调整
+        setTimeout(checkAndSetHeight, 10);
+        
+        // 监听图片加载完成
+        const images = imagesContainer.querySelectorAll('img');
+        images.forEach(img => {
+            if (img.complete) {
+                checkAndSetHeight();
+            } else {
+                img.addEventListener('load', checkAndSetHeight);
+            }
+        });
+        
+        // 存储检查函数，供外部调用
+        tierElement._checkHeight = checkAndSetHeight;
     }
 
     function createTierControls(tierId) {
@@ -586,6 +700,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 saveTiers();
                 renderTiers(); 
+                
+                // 重新调整目标梯队的高度
+                setTimeout(() => {
+                    const targetTierElement = document.querySelector(`[data-tier-id="${tierId}"]`);
+                    if (targetTierElement) {
+                        adjustTierHeight(targetTierElement);
+                    }
+                }, 50);
             }
         }
     }
@@ -613,7 +735,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     imagePool.appendChild(draggedImage);
                 }
                 saveTiers();
-                renderTiers(); 
+                renderTiers();
+                
+                // 重新调整源梯队的高度
+                setTimeout(() => {
+                    if (sourceTierElement) {
+                        adjustTierHeight(sourceTierElement);
+                    }
+                }, 50); 
             } else {
                 if (!imagePool.contains(draggedImage)) {
                     imagePool.appendChild(draggedImage);
@@ -671,6 +800,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Global image mode controls
     const globalStretchMode = document.getElementById('global-stretch-mode');
     const globalCropMode = document.getElementById('global-crop-mode');
+
+    // Initialize global image mode on page load
+    function initializeGlobalImageMode() {
+        if (globalStretchMode.checked) {
+            globalCropMode.checked = false;
+            document.body.classList.add('global-stretch-mode');
+            document.body.classList.remove('global-crop-mode');
+        } else if (globalCropMode.checked) {
+            globalStretchMode.checked = false;
+            document.body.classList.add('global-crop-mode');
+            document.body.classList.remove('global-stretch-mode');
+        }
+    }
+
+    // Apply initial settings
+    initializeGlobalImageMode();
 
     globalStretchMode.addEventListener('change', () => {
         if (globalStretchMode.checked) {
@@ -1036,6 +1181,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     addTierBtn.addEventListener('click', () => addNewTier());
     imageUploadInput.addEventListener('change', handleImageUpload);
     exportTierListBtn.addEventListener('click', exportTierList);
+    
+    // 窗口大小变化时重新调整所有梯队高度
+    window.addEventListener('resize', () => {
+        document.querySelectorAll('.tier').forEach(tierElement => {
+            if (tierElement._checkHeight) {
+                tierElement._checkHeight();
+            }
+        });
+    });
+    
+    // 添加调试功能
+    const debugTierHeightBtn = document.createElement('button');
+    debugTierHeightBtn.textContent = '🔧 调试梯队高度';
+    debugTierHeightBtn.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+        padding: 8px 12px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+    `;
+    debugTierHeightBtn.addEventListener('click', () => {
+        window.DEBUG_TIER_HEIGHT = !window.DEBUG_TIER_HEIGHT;
+        debugTierHeightBtn.textContent = window.DEBUG_TIER_HEIGHT ? '🔧 关闭调试' : '🔧 调试梯队高度';
+        debugTierHeightBtn.style.background = window.DEBUG_TIER_HEIGHT ? '#dc3545' : '#007bff';
+        
+        if (window.DEBUG_TIER_HEIGHT) {
+            console.log('=== 梯队高度调试模式已开启 ===');
+            console.log('现在拖拽图片或调整窗口大小时会显示计算详情');
+        } else {
+            console.log('=== 梯队高度调试模式已关闭 ===');
+        }
+        
+        // 立即重新计算所有梯队高度
+        document.querySelectorAll('.tier').forEach(tierElement => {
+            if (tierElement._checkHeight) {
+                tierElement._checkHeight();
+            }
+        });
+    });
+    document.body.appendChild(debugTierHeightBtn);
     
     // 添加简单导出按钮的事件监听器
     const exportTierListSimpleBtn = document.getElementById('export-tier-list-simple-btn');
