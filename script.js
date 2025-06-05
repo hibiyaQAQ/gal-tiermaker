@@ -704,8 +704,40 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             
+            // 如果是Bangumi图片，使用代理
+            if (imgElement.dataset.bangumiImage === 'true') {
+                console.log('检测到Bangumi图片，使用代理');
+                try {
+                    const originalUrl = imgElement.dataset.originalUrl || imgElement.src;
+                    const base64Url = btoa(originalUrl);
+                    const proxyUrl = `/api/img/${base64Url}`;
+                    
+                    console.log('使用代理URL:', proxyUrl);
+                    const response = await fetch(proxyUrl);
+                    
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const reader = new FileReader();
+                        reader.onload = function() {
+                            console.log('✅ 代理获取成功');
+                            resolve(reader.result);
+                        };
+                        reader.onerror = function() {
+                            console.warn('FileReader错误，回退到Image方法');
+                            fallbackToImageMethod();
+                        };
+                        reader.readAsDataURL(blob);
+                        return;
+                    } else {
+                        console.warn('代理请求失败:', response.status);
+                    }
+                } catch (error) {
+                    console.warn('代理请求出错:', error);
+                }
+            }
+            
+            // 尝试直接fetch
             try {
-                // 尝试使用fetch API获取图片数据
                 const response = await fetch(imgElement.src, {
                     mode: 'cors',
                     credentials: 'omit'
@@ -747,14 +779,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         const dataURL = canvas.toDataURL('image/png');
                         resolve(dataURL);
                     } catch (error) {
-                        console.warn('Image方法也失败，返回原始URL:', imgElement.src, error);
-                        resolve(imgElement.src);
+                        console.warn('Image方法也失败，生成占位符:', imgElement.src, error);
+                        resolve(createPlaceholderImage(imgElement));
                     }
                 };
                 
                 img.onerror = function() {
-                    console.warn('Image加载失败，返回原始URL:', imgElement.src);
-                    resolve(imgElement.src);
+                    console.warn('Image加载失败，生成占位符:', imgElement.src);
+                    resolve(createPlaceholderImage(imgElement));
                 };
                 
                 // 尝试添加时间戳绕过缓存问题
@@ -763,6 +795,84 @@ document.addEventListener('DOMContentLoaded', async () => {
                 img.src = url.toString();
             }
         });
+    }
+
+    // 创建占位符图片
+    function createPlaceholderImage(imgElement) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 120;
+        canvas.height = 160;
+        
+        // 绘制渐变背景
+        const gradient = ctx.createLinearGradient(0, 0, 0, 160);
+        gradient.addColorStop(0, '#e3f2fd');
+        gradient.addColorStop(1, '#f5f5f5');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 120, 160);
+        
+        // 绘制边框
+        ctx.strokeStyle = '#1976d2';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, 118, 158);
+        
+        // 绘制图标
+        ctx.fillStyle = '#1976d2';
+        ctx.fillRect(40, 20, 40, 30);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(42, 22, 36, 26);
+        ctx.fillStyle = '#1976d2';
+        ctx.beginPath();
+        ctx.arc(50, 32, 3, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.fillRect(55, 38, 20, 8);
+        
+        // 绘制文字
+        ctx.fillStyle = '#1976d2';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Bangumi', 60, 70);
+        
+        // 显示游戏标题
+        if (imgElement && imgElement.dataset.gameTitle) {
+            const title = imgElement.dataset.gameTitle;
+            ctx.fillStyle = '#333';
+            ctx.font = '9px Arial';
+            
+            // 分行显示标题
+            const words = title.split('');
+            let line = '';
+            let y = 90;
+            
+            for (let i = 0; i < words.length; i++) {
+                const testLine = line + words[i];
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > 110 && line !== '') {
+                    ctx.fillText(line, 60, y);
+                    line = words[i];
+                    y += 12;
+                    if (y > 145) break;
+                } else {
+                    line = testLine;
+                }
+            }
+            if (line && y <= 145) {
+                ctx.fillText(line, 60, y);
+            }
+        } else {
+            ctx.fillStyle = '#666';
+            ctx.font = '10px Arial';
+            ctx.fillText('网络图片', 60, 90);
+            ctx.fillText('无法导出', 60, 105);
+        }
+        
+        // 添加小提示
+        ctx.fillStyle = '#999';
+        ctx.font = '8px Arial';
+        ctx.fillText('右键保存原图后重新上传', 60, 150);
+        
+        return canvas.toDataURL('image/png');
     }
     
     async function exportTierList() {
@@ -1254,10 +1364,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                         itemDiv.style.pointerEvents = 'none';
                         
                         try {
-                            // 直接使用原始URL，不进行缓存
+                            // 通过代理缓存图片
                             console.log('🎯 添加Bangumi图片:', imageUrlForTier);
                             
-                            const newImageElement = createImageElement(imageUrlForTier);
+                            // 尝试通过代理缓存图片
+                            const cachedUrl = await imageCache.cacheImage(imageUrlForTier);
+                            console.log('🔗 缓存结果:', cachedUrl.startsWith('data:') ? 'data URI (成功)' : '原始URL (将在导出时处理)');
+                            
+                            const newImageElement = createImageElement(cachedUrl);
                             
                             // 在元素上保存原始URL和游戏信息
                             const imgElement = newImageElement.querySelector('img');
@@ -1266,12 +1380,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 imgElement.dataset.gameTitle = game.name_cn || game.name;
                                 imgElement.dataset.gameId = game.id;
                                 imgElement.dataset.bangumiImage = 'true';
+                                imgElement.dataset.cached = cachedUrl.startsWith('data:') ? 'true' : 'false';
                             }
                             
                             imagePool.appendChild(newImageElement);
                             itemDiv.classList.add('added');
                             
-                            console.log('✅ Bangumi图片添加成功');
+                            console.log('✅ Bangumi图片添加完成');
                             
                         } catch (error) {
                             console.error('❌ 添加Bangumi图片失败:', error);
