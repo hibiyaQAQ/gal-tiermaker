@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { load } from "https://deno.land/std@0.190.0/dotenv/mod.ts";
+import { serveDir } from "https://deno.land/std@0.190.0/http/file_server.ts";
 
 // Load environment variables from .env file for local development
 const env = await load();
@@ -10,7 +11,7 @@ const BGM_CLIENT_SECRET = Deno.env.get("BGM_CLIENT_SECRET") || env["BGM_CLIENT_S
 // For Deno Deploy, it will be your production URL.
 // For local dev, it might be http://localhost:8000/api/auth/bangumi/callback
 const BGM_REDIRECT_URI = Deno.env.get("BGM_REDIRECT_URI") || env["BGM_REDIRECT_URI"]; 
-const FRONTEND_URI = Deno.env.get("FRONTEND_URI") || env["FRONTEND_URI"] || "http://localhost:5500"; // Or your file:/// path for local dev if not serving index.html
+const FRONTEND_URI = Deno.env.get("FRONTEND_URI") || env["FRONTEND_URI"] || "/"; // Changed to serve from same domain
 
 if (!BGM_CLIENT_ID || !BGM_CLIENT_SECRET || !BGM_REDIRECT_URI) {
     console.error("Error: Missing Bangumi OAuth environment variables (BGM_CLIENT_ID, BGM_CLIENT_SECRET, BGM_REDIRECT_URI).");
@@ -24,8 +25,9 @@ console.log(`Auth server configured with:\n  Client ID: ${BGM_CLIENT_ID}\n  Redi
 
 async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    console.log(`[Auth Server] Received request: ${request.method} ${url.pathname}`);
+    console.log(`[Server] Received request: ${request.method} ${url.pathname}`);
 
+    // Handle OAuth callback API
     if (request.method === "GET" && url.pathname === "/api/auth/bangumi/callback") {
         const code = url.searchParams.get("code");
 
@@ -70,9 +72,8 @@ async function handleRequest(request: Request): Promise<Response> {
             const userId = tokenData.user_id;
             const expiresIn = tokenData.expires_in; // seconds
 
-            // Redirect back to the frontend, passing token info in the hash
-            // The frontend will pick it up from window.location.hash
-            const redirectUrl = new URL(FRONTEND_URI || "index.html"); // Default to index.html if no specific path
+            // Redirect back to the frontend homepage with token info in hash
+            const redirectUrl = new URL(FRONTEND_URI === "/" ? url.origin : FRONTEND_URI);
             redirectUrl.hash = `access_token=${accessToken}&user_id=${userId}&expires_in=${expiresIn}`;
             
             console.log(`[Auth Server] Redirecting to frontend: ${redirectUrl.toString()}`);
@@ -82,13 +83,38 @@ async function handleRequest(request: Request): Promise<Response> {
             console.error("[Auth Server] Internal server error during token exchange:", error);
             return new Response("Internal server error during token exchange.", { status: 500 });
         }
-    } else if (request.method === "GET" && url.pathname === "/") {
-        return new Response("Auth server is running. Use /api/auth/bangumi/callback for Bangumi OAuth.", { status: 200 });
-    } 
+    }
 
-    return new Response("Not Found", { status: 404 });
+    // Serve static files for all other requests
+    try {
+        const response = await serveDir(request, {
+            fsRoot: ".",
+            urlRoot: "",
+            showDirListing: false,
+            enableCors: true,
+        });
+
+        // If the requested file doesn't exist and it's not an API call, serve index.html (SPA fallback)
+        if (response.status === 404 && !url.pathname.startsWith('/api/')) {
+            try {
+                const indexFile = await Deno.readTextFile("./index.html");
+                return new Response(indexFile, {
+                    headers: { "content-type": "text/html; charset=utf-8" },
+                });
+            } catch {
+                return new Response("Frontend files not found", { status: 404 });
+            }
+        }
+
+        return response;
+    } catch (error) {
+        console.error("[Server] Error serving static files:", error);
+        return new Response("Internal server error", { status: 500 });
+    }
 }
 
 const port = parseInt(Deno.env.get("PORT") || env["PORT"] || "8000");
-console.log(`[Auth Server] HTTP server listening on http://localhost:${port}`);
+console.log(`[Server] HTTP server listening on http://localhost:${port}`);
+console.log(`[Server] Serving static files from current directory`);
+console.log(`[Server] OAuth callback available at /api/auth/bangumi/callback`);
 serve(handleRequest, { port }); 
