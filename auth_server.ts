@@ -27,6 +27,69 @@ async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     console.log(`[Server] Received request: ${request.method} ${url.pathname}`);
 
+    // Handle image proxy API - Base64方式（仿照Spring Boot方案）
+    if (request.method === "GET" && url.pathname.startsWith("/api/img/")) {
+        // 从路径中提取Base64编码的图片URL
+        const base64Url = url.pathname.replace("/api/img/", "");
+        
+        if (!base64Url) {
+            return new Response("Missing base64 encoded image URL", { status: 400 });
+        }
+
+        try {
+            // 解码Base64获取原始图片URL
+            const imageUrl = atob(base64Url);
+            console.log(`[Image Proxy] Decoding and proxying: ${imageUrl}`);
+            
+            const imageResponse = await fetch(imageUrl, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                    "Referer": "https://bgm.tv/", // 伪装referer
+                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8"
+                }
+            });
+
+            if (!imageResponse.ok) {
+                console.error(`[Image Proxy] Failed to fetch image: ${imageResponse.status} ${imageResponse.statusText}`);
+                return new Response(`Failed to fetch image: ${imageResponse.status}`, { status: imageResponse.status });
+            }
+
+            const imageBuffer = await imageResponse.arrayBuffer();
+            const contentType = imageResponse.headers.get("Content-Type") || "image/jpeg";
+            
+            console.log(`[Image Proxy] Successfully proxied image, size: ${imageBuffer.byteLength} bytes`);
+            
+            return new Response(imageBuffer, {
+                headers: {
+                    "Content-Type": contentType,
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                    "Cache-Control": "public, max-age=86400", // 缓存24小时
+                },
+            });
+
+        } catch (error) {
+            console.error("[Image Proxy] Error:", error);
+            if (error.name === 'InvalidCharacterError') {
+                return new Response("Invalid base64 encoding", { status: 400 });
+            }
+            return new Response("Image proxy error: " + error.message, { status: 500 });
+        }
+    }
+
+    // Handle CORS preflight for image proxy
+    if (request.method === "OPTIONS" && url.pathname.startsWith("/api/img/")) {
+        return new Response(null, {
+            status: 200,
+            headers: {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+            },
+        });
+    }
+
     // Handle OAuth callback API
     if (request.method === "GET" && url.pathname === "/api/auth/bangumi/callback") {
         const code = url.searchParams.get("code");
