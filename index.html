@@ -47,6 +47,22 @@
         
         <div class="export-controls">
             <button id="export-tier-list-btn">导出梯队图片</button>
+            <button id="export-tier-list-simple-btn" style="margin-left: 10px; background-color: #6c757d;">简单导出(可能缺失网络图片)</button>
+            <button id="cache-manager-btn" style="margin-left: 10px; background-color: #6f42c1;">缓存管理</button>
+        </div>
+        
+        <!-- 缓存管理面板 -->
+        <div id="cache-manager-panel" style="display: none; margin-bottom: 20px; padding: 20px; background-color: #ffffff; border: 1px solid #e9ecef; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <h3>图片缓存管理</h3>
+            <div id="cache-stats" style="margin-bottom: 15px;">
+                <p>缓存状态：<span id="cache-status">加载中...</span></p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button id="refresh-cache-stats-btn" style="background-color: #17a2b8;">刷新统计</button>
+                <button id="clean-old-cache-btn" style="background-color: #ffc107; color: #000;">清理过期缓存</button>
+                <button id="clear-all-cache-btn" style="background-color: #dc3545;">清空所有缓存</button>
+                <button id="close-cache-panel-btn" style="background-color: #6c757d;">关闭</button>
+            </div>
         </div>
         <div id="pinned-images-container">
             <h2>图片池</h2>
