@@ -29,11 +29,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let draggedImage = null;
 
     const defaultTiers = [
-        { name: 'A', color: '#ff7f7f' },
-        { name: 'A-', color: '#ffbf7f' },
-        { name: 'B+', color: '#ffff7f' },
-        { name: 'B', color: '#bfff7f' },
-        { name: 'C', color: '#7fff7f' }
+        { name: '神', color: '#ff7f7f' },
+        { name: '佳作', color: '#ffbf7f' },
+        { name: '良作', color: '#ffff7f' },
+        { name: '一般', color: '#bfff7f' },
+        { name: '烂', color: '#7fff7f' }
     ];
 
     function renderTiers() {
