@@ -234,12 +234,13 @@ button:hover, .button-like:hover {
 .tier {
     background-color: #ffffff;
     margin-bottom: 0;
-    height: 120px;
+    min-height: 120px;
     display: flex;
     border-left: 2px solid #e9ecef;
     border-right: 2px solid #e9ecef;
     border-top: 1px solid #e9ecef;
     border-bottom: none;
+    align-items: flex-start; /* 让JavaScript动态控制高度，避免CSS强制拉伸 */
 }
 
 .tier:last-child {
@@ -262,7 +263,8 @@ button:hover, .button-like:hover {
     font-weight: 600;
     font-size: 18px;
     transition: background-color 0.2s;
-    height: 120px;
+    flex-shrink: 0;
+    /* 由于父容器使用align-items: stretch，会自动拉伸等高 */
 }
 
 .tier-label:hover {
@@ -271,18 +273,23 @@ button:hover, .button-like:hover {
 
 .tier-images {
     flex-grow: 1;
-    padding: 0;
+    padding: 2px;
     display: flex;
     flex-wrap: wrap;
     gap: 0;
     align-items: flex-start;
-    height: 120px;
+    min-height: 116px; /* 减去padding的高度(2px*2=4px)，保持总高度120px */
     background-color: #f8f9fa;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow-x: visible;
+    overflow-y: visible;
+    align-content: flex-start;
+    /* 让图片可以正确换行，每行保持120px高度 */
+    line-height: 0; /* 消除行间隙 */
+    /* 让容器能够自动计算合适的高度 */
+    width: 0; /* 配合flex-grow: 1，确保正确计算宽度 */
+    /* 确保高度由JavaScript控制，而不是CSS强制 */
+    height: auto;
 }
-
-
 
 #pinned-images-container h2 {
     text-align: center;
@@ -329,14 +336,15 @@ button:hover, .button-like:hover {
     border: none;
     box-shadow: none;
     flex-shrink: 0;
+    /* 确保图片换行时对齐 */
+    display: block;
+    vertical-align: top;
 }
 
 /* Only apply hover effect to images in pool */
 .image-pool .draggable-image:hover {
     transform: scale(1.05);
 }
-
-
 
 .dragging {
     opacity: 0.5;
@@ -380,7 +388,8 @@ button:hover, .button-like:hover {
     background-color: #f8f9fa;
     border-left: 2px solid #e9ecef;
     min-width: 40px;
-    height: 120px;
+    flex-shrink: 0;
+    /* 由于父容器使用align-items: stretch，会自动拉伸等高 */
 }
 
 .tier-controls button {
@@ -482,6 +491,9 @@ body.global-stretch-mode .tier-images .draggable-image {
     border: none;
     box-shadow: none;
     flex-shrink: 0;
+    /* 确保拉伸模式下也能换行对齐 */
+    display: block;
+    vertical-align: top;
 }
 
 body.global-crop-mode .tier-images .draggable-image {
@@ -491,6 +503,9 @@ body.global-crop-mode .tier-images .draggable-image {
     border: none;
     box-shadow: none;
     flex-shrink: 0;
+    /* 确保裁剪模式下也能换行对齐 */
+    display: block;
+    vertical-align: top;
 }
 
 .global-image-controls {
