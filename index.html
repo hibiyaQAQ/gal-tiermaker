@@ -17,7 +17,7 @@
             <label for="image-upload-input" class="button-like">上传图片</label>
             <div class="global-image-controls">
                 <label for="global-stretch-mode">全局拉伸模式:</label>
-                <input type="checkbox" id="global-stretch-mode">
+                <input type="checkbox" id="global-stretch-mode" checked>
                 <label for="global-crop-mode">全局裁剪模式:</label>
                 <input type="checkbox" id="global-crop-mode">
             </div>
@@ -45,6 +45,12 @@
         <div id="tier-list-container">
             </div>
         
+        <div id="pinned-images-container">
+            <div id="image-pool" class="image-pool">
+                </div>
+            <h2>图片池</h2>
+        </div>
+        
         <div class="export-controls">
             <button id="export-tier-list-btn">导出梯队图片</button>
             <button id="export-tier-list-simple-btn" style="margin-left: 10px; background-color: #6c757d;">简单导出(可能缺失网络图片)</button>
@@ -63,11 +69,6 @@
                 <button id="clear-all-cache-btn" style="background-color: #dc3545;">清空所有缓存</button>
                 <button id="close-cache-panel-btn" style="background-color: #6c757d;">关闭</button>
             </div>
-        </div>
-        <div id="pinned-images-container">
-            <h2>图片池</h2>
-            <div id="image-pool" class="image-pool">
-                </div>
         </div>
     </main>
     <footer>
