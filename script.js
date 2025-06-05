@@ -64,42 +64,36 @@ class ImageCacheManager {
                 return cached.dataUrl;
             }
 
-            console.log('📥 开始通过网盘中转下载图片:', url);
+            console.log('📥 开始通过后端代理下载图片:', url);
             
-            // 尝试通过临时图床服务中转
+            // 使用Base64编码的代理方式（Spring Boot方案）
             try {
-                const mirrorUrl = await this.uploadToTempImageHost(url);
-                if (mirrorUrl) {
-                    console.log('🌐 成功创建图片镜像:', mirrorUrl);
+                // 对图片URL进行Base64编码
+                const base64Url = btoa(url);
+                const proxyUrl = `/api/img/${base64Url}`;
+                
+                console.log('🔗 使用代理URL:', proxyUrl);
+                
+                const response = await fetch(proxyUrl);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const dataUrl = await this.blobToDataUrl(blob);
                     
-                    // 从镜像URL下载
-                    const response = await fetch(mirrorUrl);
-                    if (response.ok) {
-                        const blob = await response.blob();
-                        const dataUrl = await this.blobToDataUrl(blob);
-                        
-                        // 存储到IndexedDB，同时保存镜像URL
-                        await this.storeImage(url, dataUrl, blob.size, mirrorUrl);
-                        console.log('✅ 通过图片镜像缓存成功:', url);
-                        
-                        return dataUrl;
-                    }
+                    // 存储到IndexedDB
+                    await this.storeImage(url, dataUrl, blob.size, proxyUrl);
+                    console.log('✅ 通过后端代理缓存成功:', url);
+                    
+                    return dataUrl;
+                } else {
+                    console.warn('代理请求失败:', response.status, response.statusText);
                 }
             } catch (error) {
-                console.warn('图床中转失败:', error);
+                console.warn('后端代理失败:', error);
             }
             
-            // 如果镜像失败，尝试直接获取（可能失败）
-            try {
-                const response = await fetch(url, { mode: 'no-cors' });
-                // no-cors模式下无法读取响应内容，所以这里主要是预加载
-                console.log('🔄 已预加载图片，但无法读取内容');
-            } catch (error) {
-                console.warn('直接访问也失败:', error);
-            }
-            
-            // 返回原始URL，在导出时会被替换为占位符
-            console.log('⚠️ 无法缓存，返回原始URL，导出时将使用占位符');
+            // 如果代理失败，返回原始URL
+            console.log('⚠️ 代理失败，返回原始URL');
             return url;
             
         } catch (error) {
@@ -108,39 +102,7 @@ class ImageCacheManager {
         }
     }
 
-    // 上传到临时图床服务（例如使用免费的图床API）
-    async uploadToTempImageHost(imageUrl) {
-        try {
-            console.log('📤 尝试上传到临时图床:', imageUrl);
-            
-            // 使用免费的图片代理服务
-            const proxyServices = [
-                `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl)}`,
-                `https://imageproxy.pimg.tw/resize?url=${encodeURIComponent(imageUrl)}`,
-                // 可以添加更多免费的图片代理服务
-            ];
-            
-            for (const proxyUrl of proxyServices) {
-                try {
-                    const testResponse = await fetch(proxyUrl, { method: 'HEAD' });
-                    if (testResponse.ok) {
-                        console.log('✅ 找到可用的图片代理:', proxyUrl);
-                        return proxyUrl;
-                    }
-                } catch (error) {
-                    console.warn('代理服务不可用:', proxyUrl);
-                    continue;
-                }
-            }
-            
-            console.warn('❌ 没有找到可用的图片代理服务');
-            return null;
-            
-        } catch (error) {
-            console.error('上传到图床失败:', error);
-            return null;
-        }
-    }
+
 
     // 备用缓存方法：使用Image + Canvas
     async cacheImageViaCanvas(url) {
