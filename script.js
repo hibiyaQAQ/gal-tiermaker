@@ -20,7 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Bangumi API Constants - IMPORTANT: Configure BGM_APP_REDIRECT_URI correctly!
     const BGM_CLIENT_ID = 'bgm40006841957e000e9'; // Your Client ID
     // This MUST match the redirect_uri configured in your Bangumi app AND in your auth_server.ts
-    const BGM_APP_REDIRECT_URI = 'http://localhost:8000/api/auth/bangumi/callback'; 
+    // For Deno Deploy, this should be: https://your-project-name.deno.dev/api/auth/bangumi/callback
+    // For local development: http://localhost:8000/api/auth/bangumi/callback
+    const BGM_APP_REDIRECT_URI = window.location.origin + '/api/auth/bangumi/callback';
 
     let tiers = [];
     let nextTierId = 0;
