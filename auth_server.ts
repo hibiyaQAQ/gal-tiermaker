@@ -37,21 +37,32 @@ async function handleRequest(request: Request): Promise<Response> {
         }
 
         console.log(`[Auth Server] Received authorization code: ${code}`);
+        
+        // Use the same redirect_uri calculation as frontend
+        const dynamicRedirectUri = url.origin + '/api/auth/bangumi/callback';
+        console.log(`[Auth Server] BGM_REDIRECT_URI from env: ${BGM_REDIRECT_URI}`);
+        console.log(`[Auth Server] Dynamic redirect_uri: ${dynamicRedirectUri}`);
+        console.log(`[Auth Server] Request URL origin: ${url.origin}`);
+        console.log(`[Auth Server] Full request URL: ${request.url}`);
 
         try {
+            const tokenRequestBody = new URLSearchParams({
+                grant_type: "authorization_code",
+                client_id: BGM_CLIENT_ID!,
+                client_secret: BGM_CLIENT_SECRET!,
+                code: code,
+                redirect_uri: dynamicRedirectUri, // Use dynamic calculation instead of env variable
+            });
+            
+            console.log(`[Auth Server] Token request body:`, tokenRequestBody.toString());
+
             const tokenResponse = await fetch("https://bgm.tv/oauth/access_token", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded",
                     "User-Agent": "TierMakerApp/1.0 (DenoAuthServer)"
                 },
-                body: new URLSearchParams({
-                    grant_type: "authorization_code",
-                    client_id: BGM_CLIENT_ID!,
-                    client_secret: BGM_CLIENT_SECRET!,
-                    code: code,
-                    redirect_uri: BGM_REDIRECT_URI!,
-                }),
+                body: tokenRequestBody,
             });
 
             if (!tokenResponse.ok) {
