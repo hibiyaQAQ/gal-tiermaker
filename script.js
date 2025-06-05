@@ -64,38 +64,81 @@ class ImageCacheManager {
                 return cached.dataUrl;
             }
 
-            console.log('📥 开始下载图片:', url);
+            console.log('📥 开始通过网盘中转下载图片:', url);
             
-            // 尝试多种方式获取图片数据
-            let blob;
+            // 尝试通过临时图床服务中转
             try {
-                const response = await fetch(url, {
-                    mode: 'cors',
-                    credentials: 'omit'
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
+                const mirrorUrl = await this.uploadToTempImageHost(url);
+                if (mirrorUrl) {
+                    console.log('🌐 成功创建图片镜像:', mirrorUrl);
+                    
+                    // 从镜像URL下载
+                    const response = await fetch(mirrorUrl);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const dataUrl = await this.blobToDataUrl(blob);
+                        
+                        // 存储到IndexedDB，同时保存镜像URL
+                        await this.storeImage(url, dataUrl, blob.size, mirrorUrl);
+                        console.log('✅ 通过图片镜像缓存成功:', url);
+                        
+                        return dataUrl;
+                    }
                 }
-                
-                blob = await response.blob();
-                console.log('✅ 通过fetch下载成功，大小:', blob.size, 'bytes');
-            } catch (fetchError) {
-                console.warn('fetch失败，尝试其他方法:', fetchError);
-                // 如果fetch失败，尝试使用Image + Canvas的方式
-                return await this.cacheImageViaCanvas(url);
+            } catch (error) {
+                console.warn('图床中转失败:', error);
             }
             
-            const dataUrl = await this.blobToDataUrl(blob);
+            // 如果镜像失败，尝试直接获取（可能失败）
+            try {
+                const response = await fetch(url, { mode: 'no-cors' });
+                // no-cors模式下无法读取响应内容，所以这里主要是预加载
+                console.log('🔄 已预加载图片，但无法读取内容');
+            } catch (error) {
+                console.warn('直接访问也失败:', error);
+            }
             
-            // 存储到IndexedDB
-            await this.storeImage(url, dataUrl, blob.size);
-            console.log('✅ 图片缓存成功:', url);
+            // 返回原始URL，在导出时会被替换为占位符
+            console.log('⚠️ 无法缓存，返回原始URL，导出时将使用占位符');
+            return url;
             
-            return dataUrl;
         } catch (error) {
             console.error('❌ 图片缓存失败:', url, error);
-            return url; // 返回原始URL作为备用
+            return url;
+        }
+    }
+
+    // 上传到临时图床服务（例如使用免费的图床API）
+    async uploadToTempImageHost(imageUrl) {
+        try {
+            console.log('📤 尝试上传到临时图床:', imageUrl);
+            
+            // 使用免费的图片代理服务
+            const proxyServices = [
+                `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl)}`,
+                `https://imageproxy.pimg.tw/resize?url=${encodeURIComponent(imageUrl)}`,
+                // 可以添加更多免费的图片代理服务
+            ];
+            
+            for (const proxyUrl of proxyServices) {
+                try {
+                    const testResponse = await fetch(proxyUrl, { method: 'HEAD' });
+                    if (testResponse.ok) {
+                        console.log('✅ 找到可用的图片代理:', proxyUrl);
+                        return proxyUrl;
+                    }
+                } catch (error) {
+                    console.warn('代理服务不可用:', proxyUrl);
+                    continue;
+                }
+            }
+            
+            console.warn('❌ 没有找到可用的图片代理服务');
+            return null;
+            
+        } catch (error) {
+            console.error('上传到图床失败:', error);
+            return null;
         }
     }
 
@@ -154,7 +197,7 @@ class ImageCacheManager {
         });
     }
 
-    async storeImage(url, dataUrl, size) {
+    async storeImage(url, dataUrl, size, mirrorUrl = null) {
         if (!this.db) return;
         
         return new Promise((resolve, reject) => {
@@ -164,7 +207,8 @@ class ImageCacheManager {
                 url: url,
                 dataUrl: dataUrl,
                 timestamp: Date.now(),
-                size: size
+                size: size,
+                mirrorUrl: mirrorUrl // 保存镜像URL
             };
             
             const request = store.put(data);
@@ -215,6 +259,27 @@ class ImageCacheManager {
                 const stats = {
                     count: items.length,
                     totalSize: items.reduce((sum, item) => sum + (item.size || 0), 0)
+                };
+                resolve(stats);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    // 获取详细统计信息
+    async getDetailedStats() {
+        if (!this.db) return { mirrorCount: 0, directCount: 0 };
+        
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([this.storeName], 'readonly');
+            const store = transaction.objectStore(this.storeName);
+            const request = store.getAll();
+            
+            request.onsuccess = () => {
+                const items = request.result;
+                const stats = {
+                    mirrorCount: items.filter(item => item.mirrorUrl).length,
+                    directCount: items.filter(item => !item.mirrorUrl).length
                 };
                 resolve(stats);
             };
@@ -919,8 +984,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function updateCacheStats() {
         try {
             const stats = await imageCache.getCacheStats();
+            const detailedStats = await imageCache.getDetailedStats();
             const sizeInMB = (stats.totalSize / 1024 / 1024).toFixed(2);
-            cacheStatusSpan.textContent = `已缓存 ${stats.count} 张图片，总大小 ${sizeInMB} MB`;
+            
+            let statusText = `已缓存 ${stats.count} 张图片，总大小 ${sizeInMB} MB`;
+            if (detailedStats.mirrorCount > 0) {
+                statusText += `，其中 ${detailedStats.mirrorCount} 张通过图床镜像`;
+            }
+            
+            cacheStatusSpan.textContent = statusText;
         } catch (error) {
             cacheStatusSpan.textContent = '获取缓存信息失败';
             console.error('获取缓存统计失败:', error);
@@ -1220,29 +1292,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                         itemDiv.style.pointerEvents = 'none';
                         
                         try {
-                            // 缓存图片
-                            console.log('🎯 点击添加Bangumi图片:', imageUrlForTier);
-                            const cachedUrl = await imageCache.cacheImage(imageUrlForTier);
-                            console.log('🔗 缓存结果URL:', cachedUrl.startsWith('data:') ? 'data URI (成功)' : '原始URL (失败)');
+                            // 直接使用原始URL，不进行缓存
+                            console.log('🎯 添加Bangumi图片:', imageUrlForTier);
                             
-                            // 使用缓存的URL创建图片元素
-                            const newImageElement = createImageElement(cachedUrl);
+                            const newImageElement = createImageElement(imageUrlForTier);
                             
-                            // 在元素上保存原始URL信息（用于后续识别）
+                            // 在元素上保存原始URL和游戏信息
                             const imgElement = newImageElement.querySelector('img');
                             if (imgElement) {
                                 imgElement.dataset.originalUrl = imageUrlForTier;
-                                imgElement.dataset.cached = 'true';
+                                imgElement.dataset.gameTitle = game.name_cn || game.name;
+                                imgElement.dataset.gameId = game.id;
+                                imgElement.dataset.bangumiImage = 'true';
                             }
                             
                             imagePool.appendChild(newImageElement);
                             itemDiv.classList.add('added');
                             
-                            // 显示成功提示
-                            console.log('Bangumi图片添加并缓存成功');
+                            console.log('✅ Bangumi图片添加成功');
                             
                         } catch (error) {
-                            console.error('添加Bangumi图片失败:', error);
+                            console.error('❌ 添加Bangumi图片失败:', error);
                             alert('添加图片失败，请重试。');
                         } finally {
                             // 恢复UI状态
