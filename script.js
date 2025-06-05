@@ -155,7 +155,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tierIndex > -1) {
                 const tierToMove = tiers[tierIndex];
                 tierToMove.images.forEach(imgSrc => {
-                    if (!Array.from(imagePool.children).some(img => img.src === imgSrc)) {
+                    if (!Array.from(imagePool.children).some(container => {
+                        const img = container.querySelector('img');
+                        return img && img.src === imgSrc;
+                    })) {
                         const imgElement = createImageElement(imgSrc);
                         imagePool.appendChild(imgElement);
                     }
@@ -183,13 +186,73 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     function createImageElement(src) {
+        const container = document.createElement('div');
+        container.style.position = 'relative';
+        container.style.display = 'inline-block';
+        
         const img = document.createElement('img');
         img.src = src;
         img.classList.add('draggable-image');
         img.draggable = true;
         img.addEventListener('dragstart', dragStart);
         img.addEventListener('dragend', dragEnd);
-        return img;
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.classList.add('image-delete-btn');
+        deleteBtn.innerHTML = '×';
+        deleteBtn.title = '删除图片';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeImageFromTierOrPool(container, src);
+        });
+        
+        container.appendChild(img);
+        container.appendChild(deleteBtn);
+        return container;
+    }
+
+    function removeImageFromTierOrPool(container, src) {
+        if (confirm('确定要删除这张图片吗？')) {
+            // Check if image is in a tier
+            const tierElement = container.closest('.tier');
+            if (tierElement) {
+                const tierId = parseInt(tierElement.dataset.tierId);
+                const tier = tiers.find(t => t.id === tierId);
+                if (tier) {
+                    tier.images = tier.images.filter(img => img !== src);
+                    saveTiers();
+                }
+            }
+            // Remove from DOM
+            container.remove();
+            
+            // Mark bangumi result as not added if it exists
+            markBangumiResultAsNotAdded(src);
+        }
+    }
+
+    function markBangumiResultAsNotAdded(imageSrc) {
+        const resultItems = document.querySelectorAll('.bangumi-result-item');
+        resultItems.forEach(item => {
+            const img = item.querySelector('img');
+            if (img && img.src === imageSrc) {
+                item.classList.remove('added');
+            }
+        });
+    }
+
+    function isImageAlreadyAdded(imageSrc) {
+        // Check in image pool
+        const poolImages = Array.from(imagePool.children);
+        if (poolImages.some(container => {
+            const img = container.querySelector('img');
+            return img && img.src === imageSrc;
+        })) {
+            return true;
+        }
+        
+        // Check in all tiers
+        return tiers.some(tier => tier.images.includes(imageSrc));
     }
 
     function handleImageUpload(event) {
@@ -208,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function dragStart(event) {
-        draggedImage = event.target;
+        draggedImage = event.target.closest('div'); // Get the container
         setTimeout(() => {
             event.target.classList.add('dragging');
         }, 0);
@@ -229,18 +292,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetTier = tiers.find(t => t.id === tierId);
             const sourceTierElement = draggedImage.closest('.tier');
             const sourceImagePool = draggedImage.closest('#image-pool');
+            const imgElement = draggedImage.querySelector('img');
+            const imageSrc = imgElement ? imgElement.src : null;
 
-            if (targetTier) {
+            if (targetTier && imageSrc) {
                 if (sourceTierElement) {
                     const sourceTierId = parseInt(sourceTierElement.dataset.tierId);
                     const sourceTier = tiers.find(t => t.id === sourceTierId);
                     if (sourceTier) {
-                        sourceTier.images = sourceTier.images.filter(img => img !== draggedImage.src);
+                        sourceTier.images = sourceTier.images.filter(img => img !== imageSrc);
                     }
                 }
                 
-                if (!targetTier.images.includes(draggedImage.src)) {
-                     targetTier.images.push(draggedImage.src);
+                if (!targetTier.images.includes(imageSrc)) {
+                     targetTier.images.push(imageSrc);
                 }
                 draggedImage.remove(); 
 
@@ -255,15 +320,21 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         if (draggedImage) {
             const sourceTierElement = draggedImage.closest('.tier');
-            if (sourceTierElement) { 
+            const imgElement = draggedImage.querySelector('img');
+            const imageSrc = imgElement ? imgElement.src : null;
+            
+            if (sourceTierElement && imageSrc) { 
                 const sourceTierId = parseInt(sourceTierElement.dataset.tierId);
                 const sourceTier = tiers.find(t => t.id === sourceTierId);
                 if (sourceTier) {
-                    sourceTier.images = sourceTier.images.filter(img => img !== draggedImage.src);
+                    sourceTier.images = sourceTier.images.filter(img => img !== imageSrc);
                 }
                 draggedImage.remove(); 
                 
-                if (!Array.from(imagePool.children).some(img => img.src === draggedImage.src)) {
+                if (!Array.from(imagePool.children).some(container => {
+                    const img = container.querySelector('img');
+                    return img && img.src === imageSrc;
+                })) {
                     imagePool.appendChild(draggedImage);
                 }
                 saveTiers();
@@ -273,7 +344,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     imagePool.appendChild(draggedImage);
                 }
             }
-            draggedImage.classList.remove('dragging');
+            const draggingImg = draggedImage.querySelector('img');
+            if (draggingImg) {
+                draggingImg.classList.remove('dragging');
+            }
             draggedImage = null;
         }
     });
@@ -319,9 +393,68 @@ document.addEventListener('DOMContentLoaded', () => {
         return color;
     }
 
+    // Global image mode controls
+    const globalStretchMode = document.getElementById('global-stretch-mode');
+    const globalCropMode = document.getElementById('global-crop-mode');
+
+    globalStretchMode.addEventListener('change', () => {
+        if (globalStretchMode.checked) {
+            globalCropMode.checked = false;
+            document.body.classList.add('global-stretch-mode');
+            document.body.classList.remove('global-crop-mode');
+        } else {
+            document.body.classList.remove('global-stretch-mode');
+        }
+    });
+
+    globalCropMode.addEventListener('change', () => {
+        if (globalCropMode.checked) {
+            globalStretchMode.checked = false;
+            document.body.classList.add('global-crop-mode');
+            document.body.classList.remove('global-stretch-mode');
+        } else {
+            document.body.classList.remove('global-crop-mode');
+        }
+    });
+
+    // Export functionality
+    const exportTierListBtn = document.getElementById('export-tier-list-btn');
+    
+    async function exportTierList() {
+        const tierListContainer = document.getElementById('tier-list-container');
+        
+        try {
+            // 添加一个短暂延迟确保渲染完成
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const canvas = await html2canvas(tierListContainer, {
+                backgroundColor: '#ffffff',
+                scale: 1.5,
+                useCORS: true,
+                allowTaint: true,
+                logging: false
+            });
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.download = 'tier-list.png';
+            link.href = canvas.toDataURL('image/png');
+            
+            // Trigger download
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+        } catch (error) {
+            console.error('导出失败:', error);
+            alert('导出失败，请重试。');
+        }
+    }
+
     // Event Listeners
     addTierBtn.addEventListener('click', () => addNewTier());
     imageUploadInput.addEventListener('change', handleImageUpload);
+    exportTierListBtn.addEventListener('click', exportTierList);
     
     // --- Bangumi Auth Logic ---
     function handleBangumiLogin() {
@@ -525,11 +658,22 @@ document.addEventListener('DOMContentLoaded', () => {
             itemDiv.appendChild(img);
             itemDiv.appendChild(nameSpan);
 
+            const imageUrlForTier = game.images.large || game.images.common || game.images.medium;
+            
+            // Check if image is already added
+            if (imageUrlForTier && isImageAlreadyAdded(imageUrlForTier)) {
+                itemDiv.classList.add('added');
+            }
+
             itemDiv.addEventListener('click', () => {
-                const imageUrlForTier = game.images.large || game.images.common || game.images.medium;
                 if (imageUrlForTier) {
-                    const newImageElement = createImageElement(imageUrlForTier);
-                    imagePool.appendChild(newImageElement);
+                    if (!isImageAlreadyAdded(imageUrlForTier)) {
+                        const newImageElement = createImageElement(imageUrlForTier);
+                        imagePool.appendChild(newImageElement);
+                        itemDiv.classList.add('added');
+                    } else {
+                        alert('这张图片已经添加过了！');
+                    }
                 } else {
                     alert('无法获取此游戏的图片用于添加。');
                 }
