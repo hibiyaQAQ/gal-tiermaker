@@ -529,4 +529,116 @@ body.global-crop-mode .tier-images .draggable-image {
     height: 16px;
     cursor: pointer;
     margin-right: 15px;
+}
+
+/* 侧边图片池样式 */
+.sidebar-image-pool {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 300px;
+    height: 100vh;
+    background-color: #ffffff;
+    border-left: 2px solid #e9ecef;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.3s ease-in-out;
+}
+
+.sidebar-image-pool.open {
+    transform: translateX(0);
+}
+
+.sidebar-pool-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e9ecef;
+    flex-shrink: 0;
+}
+
+.sidebar-pool-header h3 {
+    margin: 0;
+    color: #495057;
+    font-weight: 500;
+    font-size: 1.1rem;
+}
+
+#close-sidebar-pool-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #6c757d;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+#close-sidebar-pool-btn:hover {
+    background-color: #e9ecef;
+    color: #dc3545;
+}
+
+.sidebar-image-pool-content {
+    flex-grow: 1;
+    padding: 15px;
+    overflow-y: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    align-content: flex-start;
+    background-color: #f8f9fa;
+}
+
+/* 侧边图片池中的图片样式 */
+.sidebar-image-pool-content .draggable-image {
+    width: 70px !important;
+    height: 70px !important;
+    object-fit: cover !important;
+    border: 2px solid #fff;
+    border-radius: 4px;
+    cursor: grab;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+.sidebar-image-pool-content .draggable-image:hover {
+    transform: scale(1.1);
+}
+
+/* 侧边图片池中的删除按钮 */
+.sidebar-image-pool-content .image-delete-btn {
+    display: flex;
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+}
+
+/* 侧边图片池按钮样式 */
+#toggle-sidebar-pool-btn {
+    background-color: #6f42c1;
+}
+
+#toggle-sidebar-pool-btn:hover {
+    background-color: #5a32a3;
+}
+
+#toggle-sidebar-pool-btn.active {
+    background-color: #dc3545;
+}
+
+#toggle-sidebar-pool-btn.active:hover {
+    background-color: #c82333;
 } 
