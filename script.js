@@ -420,24 +420,103 @@ document.addEventListener('DOMContentLoaded', () => {
     // Export functionality
     const exportTierListBtn = document.getElementById('export-tier-list-btn');
     
+    // 将图片URL转换为base64数据URI的辅助函数
+    async function convertImageToDataURL(imgElement) {
+        return new Promise((resolve, reject) => {
+            // 如果已经是data URI，直接返回
+            if (imgElement.src.startsWith('data:')) {
+                resolve(imgElement.src);
+                return;
+            }
+            
+            // 创建一个新的图片对象
+            const img = new Image();
+            img.crossOrigin = 'anonymous'; // 尝试跨域请求
+            
+            img.onload = function() {
+                try {
+                    // 创建canvas来转换图片
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = this.naturalWidth;
+                    canvas.height = this.naturalHeight;
+                    
+                    // 绘制图片到canvas
+                    ctx.drawImage(this, 0, 0);
+                    
+                    // 转换为data URL
+                    const dataURL = canvas.toDataURL('image/png');
+                    resolve(dataURL);
+                } catch (error) {
+                    console.warn('无法转换图片到base64:', imgElement.src, error);
+                    // 如果转换失败，返回原始URL
+                    resolve(imgElement.src);
+                }
+            };
+            
+            img.onerror = function() {
+                console.warn('无法加载图片进行转换:', imgElement.src);
+                // 如果加载失败，返回原始URL
+                resolve(imgElement.src);
+            };
+            
+            img.src = imgElement.src;
+        });
+    }
+    
     async function exportTierList() {
         const tierListContainer = document.getElementById('tier-list-container');
         
         try {
-            // 添加一个短暂延迟确保渲染完成
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // 显示导出进度提示
+            const originalText = exportTierListBtn.textContent;
+            exportTierListBtn.textContent = '正在处理图片...';
+            exportTierListBtn.disabled = true;
+            
+            // 获取所有tier中的图片元素
+            const allImages = tierListContainer.querySelectorAll('.draggable-image');
+            const imageConversions = [];
+            
+            // 为每个图片创建转换任务
+            for (const img of allImages) {
+                imageConversions.push(
+                    convertImageToDataURL(img).then(dataURL => {
+                        return { element: img, originalSrc: img.src, dataURL: dataURL };
+                    })
+                );
+            }
+            
+            // 等待所有图片转换完成
+            const convertedImages = await Promise.all(imageConversions);
+            
+            // 临时替换图片源为base64
+            convertedImages.forEach(({ element, dataURL }) => {
+                element.src = dataURL;
+            });
+            
+            exportTierListBtn.textContent = '正在生成图片...';
+            
+            // 添加延迟确保DOM更新完成
+            await new Promise(resolve => setTimeout(resolve, 500));
             
             const canvas = await html2canvas(tierListContainer, {
                 backgroundColor: '#ffffff',
                 scale: 1.5,
-                useCORS: true,
-                allowTaint: true,
-                logging: false
+                allowTaint: false, // 设置为false，因为我们已经转换了图片
+                useCORS: false,    // 设置为false，避免冲突
+                logging: false,
+                imageSmoothingEnabled: true,
+                removeContainer: false
+            });
+            
+            // 恢复原始图片源
+            convertedImages.forEach(({ element, originalSrc }) => {
+                element.src = originalSrc;
             });
             
             // Create download link
             const link = document.createElement('a');
-            link.download = 'tier-list.png';
+            link.download = `tier-list-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`;
             link.href = canvas.toDataURL('image/png');
             
             // Trigger download
@@ -445,9 +524,17 @@ document.addEventListener('DOMContentLoaded', () => {
             link.click();
             document.body.removeChild(link);
             
+            // 恢复按钮状态
+            exportTierListBtn.textContent = originalText;
+            exportTierListBtn.disabled = false;
+            
         } catch (error) {
             console.error('导出失败:', error);
-            alert('导出失败，请重试。');
+            alert('导出失败，请重试。错误信息: ' + error.message);
+            
+            // 恢复按钮状态
+            exportTierListBtn.textContent = '导出梯队图片';
+            exportTierListBtn.disabled = false;
         }
     }
 
