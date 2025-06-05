@@ -15,6 +15,7 @@
             <button id="add-tier-btn">添加级别</button>
             <input type="file" id="image-upload-input" multiple accept="image/*">
             <label for="image-upload-input" class="button-like">上传图片</label>
+            <button id="toggle-sidebar-pool-btn" class="active">关闭侧边池</button>
             <div class="global-image-controls">
                 <label for="global-stretch-mode">全局拉伸模式:</label>
                 <input type="checkbox" id="global-stretch-mode" checked>
@@ -71,6 +72,17 @@
             </div>
         </div>
     </main>
+    
+    <!-- 侧边图片池 -->
+    <div id="sidebar-image-pool" class="sidebar-image-pool open" style="display: flex;">
+        <div class="sidebar-pool-header">
+            <h3>图片池</h3>
+            <button id="close-sidebar-pool-btn">×</button>
+        </div>
+        <div id="sidebar-image-pool-content" class="sidebar-image-pool-content">
+        </div>
+    </div>
+    
     <footer>
         <p>灵感来源于tiermaker.com</p>
     </footer>
