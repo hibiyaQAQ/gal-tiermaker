@@ -8,13 +8,19 @@
 </head>
 <body>
     <header>
-        <h1>我的 Tier List</h1>
+        <h1>Galgame Tier</h1>
     </header>
     <main>
         <div class="controls">
             <button id="add-tier-btn">添加级别</button>
             <input type="file" id="image-upload-input" multiple accept="image/*">
             <label for="image-upload-input" class="button-like">上传图片</label>
+            <div class="global-image-controls">
+                <label for="global-stretch-mode">全局拉伸模式:</label>
+                <input type="checkbox" id="global-stretch-mode">
+                <label for="global-crop-mode">全局裁剪模式:</label>
+                <input type="checkbox" id="global-crop-mode">
+            </div>
         </div>
 
         <div class="bangumi-controls">
@@ -38,15 +44,20 @@
 
         <div id="tier-list-container">
             </div>
+        
+        <div class="export-controls">
+            <button id="export-tier-list-btn">导出梯队图片</button>
+        </div>
         <div id="pinned-images-container">
-            <h2>固定图片</h2>
+            <h2>图片池</h2>
             <div id="image-pool" class="image-pool">
                 </div>
         </div>
     </main>
     <footer>
-        <p>可部署到 GitHub Pages & Deno</p>
+        <p>灵感来源于tiermaker.com</p>
     </footer>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html> 
