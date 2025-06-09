@@ -641,6 +641,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Remove from DOM
             container.remove();
             
+            // 强制同步图片池
+            forceSyncImagePools();
+            
             // Mark bangumi result as not added if it exists
             markBangumiResultAsNotAdded(src);
         }
@@ -678,6 +681,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 reader.onload = (e) => {
                     const imgElement = createImageElement(e.target.result);
                     imagePool.appendChild(imgElement);
+                    // 强制同步图片池
+                    forceSyncImagePools();
                 };
                 reader.readAsDataURL(file);
             }
@@ -707,10 +712,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const targetTier = tiers.find(t => t.id === tierId);
             const sourceTierElement = draggedImage.closest('.tier');
             const sourceImagePool = draggedImage.closest('#image-pool');
+            const sourceSidebarPool = draggedImage.closest('#sidebar-image-pool-content');
             const imgElement = draggedImage.querySelector('img');
             const imageSrc = imgElement ? imgElement.src : null;
 
             if (targetTier && imageSrc) {
+                // 从源位置移除图片数据
                 if (sourceTierElement) {
                     const sourceTierId = parseInt(sourceTierElement.dataset.tierId);
                     const sourceTier = tiers.find(t => t.id === sourceTierId);
@@ -719,13 +726,31 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
                 
+                // 如果是从图片池拖拽过来的，需要从图片池中移除
+                if (sourceImagePool || sourceSidebarPool) {
+                    // 从主图片池中移除
+                    const mainPoolImages = Array.from(imagePool.children);
+                    mainPoolImages.forEach(container => {
+                        const img = container.querySelector('img');
+                        if (img && img.src === imageSrc) {
+                            container.remove();
+                        }
+                    });
+                }
+                
+                // 添加到目标梯队
                 if (!targetTier.images.includes(imageSrc)) {
                      targetTier.images.push(imageSrc);
                 }
+                
+                // 删除拖拽的图片元素
                 draggedImage.remove(); 
 
                 saveTiers();
                 renderTiers(); 
+                
+                // 强制同步图片池
+                forceSyncImagePools();
                 
                 // 重新调整目标梯队的高度
                 setTimeout(() => {
@@ -743,25 +768,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         event.preventDefault();
         if (draggedImage) {
             const sourceTierElement = draggedImage.closest('.tier');
+            const sourceImagePool = draggedImage.closest('#image-pool');
+            const sourceSidebarPool = draggedImage.closest('#sidebar-image-pool-content');
             const imgElement = draggedImage.querySelector('img');
             const imageSrc = imgElement ? imgElement.src : null;
             
             if (sourceTierElement && imageSrc) { 
+                // 从梯队拖拽到图片池
                 const sourceTierId = parseInt(sourceTierElement.dataset.tierId);
                 const sourceTier = tiers.find(t => t.id === sourceTierId);
                 if (sourceTier) {
                     sourceTier.images = sourceTier.images.filter(img => img !== imageSrc);
                 }
-                draggedImage.remove(); 
                 
-                if (!Array.from(imagePool.children).some(container => {
+                // 检查图片池中是否已存在该图片
+                const alreadyExists = Array.from(imagePool.children).some(container => {
                     const img = container.querySelector('img');
                     return img && img.src === imageSrc;
-                })) {
-                    imagePool.appendChild(draggedImage);
+                });
+                
+                if (!alreadyExists) {
+                    // 创建新的图片元素并添加到图片池
+                    const newImageElement = createImageElement(imageSrc);
+                    imagePool.appendChild(newImageElement);
                 }
+                
+                draggedImage.remove();
                 saveTiers();
                 renderTiers();
+                
+                // 强制同步图片池
+                forceSyncImagePools();
                 
                 // 重新调整源梯队的高度
                 setTimeout(() => {
@@ -769,11 +806,27 @@ document.addEventListener('DOMContentLoaded', async () => {
                         adjustTierHeight(sourceTierElement);
                     }
                 }, 50); 
-            } else {
+            } else if (sourceImagePool || sourceSidebarPool) {
+                // 在图片池内部移动（包括从侧边池到主池）
                 if (!imagePool.contains(draggedImage)) {
-                    imagePool.appendChild(draggedImage);
+                    // 如果是从侧边池拖拽过来的，创建新元素
+                    if (sourceSidebarPool && imageSrc) {
+                        const alreadyExists = Array.from(imagePool.children).some(container => {
+                            const img = container.querySelector('img');
+                            return img && img.src === imageSrc;
+                        });
+                        
+                        if (!alreadyExists) {
+                            const newImageElement = createImageElement(imageSrc);
+                            imagePool.appendChild(newImageElement);
+                        }
+                        draggedImage.remove();
+                    } else {
+                        imagePool.appendChild(draggedImage);
+                    }
                 }
             }
+            
             const draggingImg = draggedImage.querySelector('img');
             if (draggingImg) {
                 draggingImg.classList.remove('dragging');
@@ -873,11 +926,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     function syncSidebarPool() {
         if (!sidebarPoolOpen) return;
         
+        console.log('🔄 开始同步侧边图片池...');
+        
         // 清空侧边图片池
         sidebarImagePoolContent.innerHTML = '';
         
         // 复制主图片池中的所有图片到侧边图片池
         const mainPoolImages = imagePool.children;
+        console.log(`📊 主图片池中有 ${mainPoolImages.length} 张图片`);
+        
         Array.from(mainPoolImages).forEach(imageContainer => {
             const img = imageContainer.querySelector('img');
             if (img) {
@@ -886,8 +943,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
         
+        console.log(`✅ 侧边图片池同步完成，现有 ${sidebarImagePoolContent.children.length} 张图片`);
+        
         // 为侧边图片池中的图片添加拖拽监听器
         addDragListenersToImages();
+    }
+    
+    // 强制同步函数，用于在关键操作后确保同步
+    function forceSyncImagePools() {
+        if (sidebarPoolOpen) {
+            // 短暂延迟确保DOM操作完成
+            setTimeout(() => {
+                syncSidebarPool();
+            }, 10);
+        }
     }
 
     // 监听主图片池的变化，同步到侧边图片池
@@ -908,38 +977,50 @@ document.addEventListener('DOMContentLoaded', async () => {
         event.preventDefault();
         if (draggedImage) {
             const sourceTierElement = draggedImage.closest('.tier');
+            const sourceImagePool = draggedImage.closest('#image-pool');
+            const sourceSidebarPool = draggedImage.closest('#sidebar-image-pool-content');
             const imgElement = draggedImage.querySelector('img');
             const imageSrc = imgElement ? imgElement.src : null;
             
             if (sourceTierElement && imageSrc) { 
+                // 从梯队拖拽到侧边池
                 const sourceTierId = parseInt(sourceTierElement.dataset.tierId);
                 const sourceTier = tiers.find(t => t.id === sourceTierId);
                 if (sourceTier) {
                     sourceTier.images = sourceTier.images.filter(img => img !== imageSrc);
                 }
-                draggedImage.remove(); 
                 
-                // 添加到主图片池（会自动同步到侧边池）
-                if (!Array.from(imagePool.children).some(container => {
+                // 检查主图片池中是否已存在该图片
+                const alreadyExists = Array.from(imagePool.children).some(container => {
                     const img = container.querySelector('img');
                     return img && img.src === imageSrc;
-                })) {
-                    imagePool.appendChild(draggedImage);
+                });
+                
+                if (!alreadyExists) {
+                    // 添加到主图片池（会自动同步到侧边池）
+                    const newImageElement = createImageElement(imageSrc);
+                    imagePool.appendChild(newImageElement);
                 }
+                
+                draggedImage.remove();
                 saveTiers();
                 renderTiers();
+                
+                // 强制同步图片池
+                forceSyncImagePools();
                 
                 setTimeout(() => {
                     if (sourceTierElement) {
                         adjustTierHeight(sourceTierElement);
                     }
                 }, 50); 
-            } else {
-                // 如果图片已经在图片池中，不需要重复添加
-                if (!imagePool.contains(draggedImage) && !sidebarImagePoolContent.contains(draggedImage)) {
-                    imagePool.appendChild(draggedImage);
-                }
+            } else if (sourceImagePool) {
+                // 从主图片池拖拽到侧边池，不需要做任何事情，因为它们是同步的
+                // 只需要清理拖拽状态
+            } else if (sourceSidebarPool) {
+                // 在侧边池内部移动，不需要做任何事情
             }
+            
             const draggingImg = draggedImage.querySelector('img');
             if (draggingImg) {
                 draggingImg.classList.remove('dragging');
@@ -1725,6 +1806,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                             
                             imagePool.appendChild(newImageElement);
                             itemDiv.classList.add('added');
+                            
+                            // 强制同步图片池
+                            forceSyncImagePools();
                             
                             console.log('✅ Bangumi图片添加完成');
                             
