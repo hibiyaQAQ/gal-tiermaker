@@ -312,7 +312,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     ];
 
     function renderTiers() {
+        console.log('开始渲染梯队...');
         tierListContainer.innerHTML = ''; // Clear existing tiers
+        
+        // 检查梯队数据
+        tiers.forEach((tier, index) => {
+            console.log(`梯队 ${tier.id} (${tier.name || tier.label || '未命名'}) 包含 ${tier.images.length} 张图片`);
+        });
+        
         tiers.forEach(tier => {
             const tierElement = createTierElement(tier);
             tierListContainer.appendChild(tierElement);
@@ -327,28 +334,40 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             });
         }, 20);
+        
+        console.log('梯队渲染完成');
     }
 
     function createTierElement(tier) {
         const tierElement = document.createElement('div');
         tierElement.classList.add('tier');
         tierElement.dataset.tierId = tier.id;
-
+        
         const labelContainer = document.createElement('div');
         labelContainer.classList.add('tier-label');
-        labelContainer.style.backgroundColor = tier.color || getRandomColor();
-        labelContainer.textContent = tier.name;
+        labelContainer.style.backgroundColor = tier.color || '#495057';
+        // 使用 tier.name 而不是 tier.label
+        labelContainer.textContent = tier.name || tier.label || '未命名';
         labelContainer.addEventListener('click', () => renameTier(tier.id));
-
+        
         const imagesContainer = document.createElement('div');
         imagesContainer.classList.add('tier-images');
         imagesContainer.addEventListener('dragover', allowDrop);
         imagesContainer.addEventListener('drop', (event) => dropImage(event, tier.id));
-
-        tier.images.forEach(imgSrc => {
-            const img = createImageElement(imgSrc);
-            imagesContainer.appendChild(img);
-        });
+        
+        console.log(`创建梯队元素: ${tier.id} (${tier.name || tier.label || '未命名'}), 图片数量: ${tier.images.length}`);
+        
+        // 确保所有图片都被添加到梯队中
+        if (tier.images && tier.images.length > 0) {
+            tier.images.forEach((imgSrc, index) => {
+                if (!imgSrc) {
+                    console.warn(`梯队 ${tier.id} 中的第 ${index} 张图片URL为空`);
+                    return;
+                }
+                const img = createImageElement(imgSrc);
+                imagesContainer.appendChild(img);
+            });
+        }
 
         const controlsContainer = createTierControls(tier.id);
 
@@ -529,9 +548,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renameTier(tierId) {
         const tier = tiers.find(t => t.id === tierId);
         if (tier) {
-            const newName = prompt('输入级别新名称:', tier.name);
+            // 使用 tier.name 而不是 tier.label
+            const newName = prompt('输入级别新名称:', tier.name || tier.label || '');
             if (newName !== null && newName.trim() !== '') {
                 tier.name = newName.trim();
+                // 为了兼容性，同时设置 label 属性
+                tier.label = newName.trim();
                 saveTiers();
                 renderTiers();
             }
@@ -717,17 +739,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             const imageSrc = imgElement ? imgElement.src : null;
 
             if (targetTier && imageSrc) {
+                console.log(`开始处理拖拽: 图片 ${imageSrc} 到梯队 ${tierId}`);
+                
                 // 从源位置移除图片数据
                 if (sourceTierElement) {
                     const sourceTierId = parseInt(sourceTierElement.dataset.tierId);
                     const sourceTier = tiers.find(t => t.id === sourceTierId);
                     if (sourceTier) {
+                        console.log(`从源梯队 ${sourceTierId} 移除图片`);
                         sourceTier.images = sourceTier.images.filter(img => img !== imageSrc);
                     }
                 }
                 
                 // 如果是从图片池拖拽过来的，需要从图片池中移除
                 if (sourceImagePool || sourceSidebarPool) {
+                    console.log(`从图片池移除图片`);
                     // 从主图片池中移除
                     const mainPoolImages = Array.from(imagePool.children);
                     mainPoolImages.forEach(container => {
@@ -738,15 +764,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 }
                 
-                // 添加到目标梯队
+                // 添加到目标梯队 - 确保在删除拖拽元素前添加到数据中
                 if (!targetTier.images.includes(imageSrc)) {
-                     targetTier.images.push(imageSrc);
+                    console.log(`添加图片到目标梯队 ${tierId}`);
+                    targetTier.images.push(imageSrc);
                 }
+                
+                // 保存数据 - 移到删除元素之前
+                saveTiers();
                 
                 // 删除拖拽的图片元素
                 draggedImage.remove(); 
-
-                saveTiers();
+                
+                // 先渲染梯队，确保图片显示
                 renderTiers(); 
                 
                 // 强制同步图片池
@@ -758,6 +788,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (targetTierElement) {
                         adjustTierHeight(targetTierElement);
                     }
+                    
+                    // 验证图片是否成功添加到梯队
+                    console.log(`验证: 梯队 ${tierId} 现在有 ${targetTier.images.length} 张图片`);
                 }, 50);
             }
         }
