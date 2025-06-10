@@ -37,7 +37,13 @@ class ImageCacheManager {
                     if (!db.objectStoreNames.contains(this.storeName)) {
                         const store = db.createObjectStore(this.storeName, { keyPath: 'url' });
                         store.createIndex('timestamp', 'timestamp', { unique: false });
-                        console.log('✅ IndexedDB存储结构创建成功');
+                        console.log('✅ IndexedDB图片存储结构创建成功');
+                    }
+                    
+                    // 添加梯队数据存储
+                    if (!db.objectStoreNames.contains('tierData')) {
+                        db.createObjectStore('tierData', { keyPath: 'id' });
+                        console.log('✅ IndexedDB梯队数据存储结构创建成功');
                     }
                 };
             });
@@ -878,26 +884,95 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    function saveTiers() {
-        localStorage.setItem('tiermakerData', JSON.stringify(tiers));
+    async function saveTiers() {
+        try {
+            // 确保数据库已初始化
+            if (!imageCache.db) {
+                await imageCache.initDB();
+            }
+            
+            // 创建一个新的事务和存储
+            const transaction = imageCache.db.transaction(['tierData'], 'readwrite');
+            const store = transaction.objectStore('tierData');
+            
+            // 保存梯队数据
+            await new Promise((resolve, reject) => {
+                const request = store.put({ id: 'tierList', data: tiers });
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+            
+            console.log('梯队数据已保存到 IndexedDB');
+        } catch (error) {
+            console.error('保存梯队数据失败:', error);
+            // 尝试保存简化版本到 localStorage
+            try {
+                const simpleTiers = tiers.map(tier => ({
+                    ...tier,
+                    images: tier.images.map(img => img.startsWith('data:') ? 
+                        img.substring(0, 100) + '...(已截断)' : img)
+                }));
+                localStorage.setItem('tiermakerData', JSON.stringify(simpleTiers));
+                console.log('简化的梯队数据已保存到 localStorage');
+            } catch (e) {
+                console.error('保存到 localStorage 也失败了:', e);
+                alert('无法保存梯队数据，请导出您的作品以防数据丢失！');
+            }
+        }
     }
 
-    function loadTiers() {
-        const savedData = localStorage.getItem('tiermakerData');
-        if (savedData) {
-            tiers = JSON.parse(savedData);
-            if (tiers.length > 0) {
-                 nextTierId = Math.max(...tiers.map(t => t.id)) + 1;
-            } else {
-                nextTierId = 0;
+    async function loadTiers() {
+        try {
+            // 确保数据库已初始化
+            if (!imageCache.db) {
+                await imageCache.initDB();
             }
-        } else {
+            
+            // 创建一个新的事务和存储
+            const transaction = imageCache.db.transaction(['tierData'], 'readonly');
+            const store = transaction.objectStore('tierData');
+            
+            // 加载梯队数据
+            const tierData = await new Promise((resolve, reject) => {
+                const request = store.get('tierList');
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            
+            if (tierData && tierData.data) {
+                tiers = tierData.data;
+                if (tiers.length > 0) {
+                    nextTierId = Math.max(...tiers.map(t => t.id)) + 1;
+                } else {
+                    nextTierId = 0;
+                }
+                console.log('从 IndexedDB 加载了梯队数据');
+            } else {
+                // 尝试从 localStorage 加载
+                const localData = localStorage.getItem('tiermakerData');
+                if (localData) {
+                    tiers = JSON.parse(localData);
+                    if (tiers.length > 0) {
+                        nextTierId = Math.max(...tiers.map(t => t.id)) + 1;
+                    } else {
+                        nextTierId = 0;
+                    }
+                    console.log('从 localStorage 加载了梯队数据');
+                } else {
+                    defaultTiers.forEach(tierData => {
+                        addNewTier(tierData.name, tierData.color, []);
+                    });
+                    console.log('加载了默认梯队');
+                    return;
+                }
+            }
+            renderTiers();
+        } catch (error) {
+            console.error('加载梯队数据失败:', error);
             defaultTiers.forEach(tierData => {
                 addNewTier(tierData.name, tierData.color, []);
             });
-            return; 
         }
-        renderTiers();
     }
     
     function getRandomColor() {
