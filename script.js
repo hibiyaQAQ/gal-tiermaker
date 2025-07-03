@@ -267,8 +267,8 @@ async function initializeCacheSystem() {
         const stats = await imageCache.getCacheStats();
         console.log(`📊 缓存系统已就绪，当前缓存: ${stats.count} 张图片`);
         
-        // 清理7天前的缓存
-        await imageCache.cleanOldCache();
+        // 延长缓存清理时间到30天，避免过度清理导致图片丢失
+        await imageCache.cleanOldCache(30 * 24 * 60 * 60 * 1000); // 30天
         
         return true;
     } catch (error) {
@@ -720,6 +720,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function dragStart(event) {
         draggedImage = event.target.closest('div'); // Get the container
+        console.log('🟡 开始拖拽，暂停图片池同步');
         setTimeout(() => {
             event.target.classList.add('dragging');
         }, 0);
@@ -727,7 +728,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function dragEnd(event) {
         event.target.classList.remove('dragging');
-        draggedImage = null;
+        console.log('🟢 拖拽结束，恢复图片池同步');
+        // 延迟重置拖拽状态，确保drop事件完成
+        setTimeout(() => {
+            draggedImage = null;
+        }, 100);
     }
 
     function allowDrop(event) {
@@ -779,25 +784,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // 保存数据 - 移到删除元素之前
                 saveTiers();
                 
-                // 删除拖拽的图片元素
-                draggedImage.remove(); 
-                
                 // 先渲染梯队，确保图片显示
                 renderTiers(); 
                 
-                // 强制同步图片池
-                forceSyncImagePools();
-                
-                // 重新调整目标梯队的高度
+                // 延迟删除拖拽的图片元素，确保渲染完成
                 setTimeout(() => {
-                    const targetTierElement = document.querySelector(`[data-tier-id="${tierId}"]`);
-                    if (targetTierElement) {
-                        adjustTierHeight(targetTierElement);
+                    if (draggedImage && draggedImage.parentNode) {
+                        draggedImage.remove(); 
                     }
                     
-                    // 验证图片是否成功添加到梯队
-                    console.log(`验证: 梯队 ${tierId} 现在有 ${targetTier.images.length} 张图片`);
-                }, 50);
+                    // 强制同步图片池
+                    forceSyncImagePools();
+                    
+                    // 重新调整目标梯队的高度
+                    setTimeout(() => {
+                        const targetTierElement = document.querySelector(`[data-tier-id="${tierId}"]`);
+                        if (targetTierElement) {
+                            adjustTierHeight(targetTierElement);
+                        }
+                        
+                        // 验证图片是否成功添加到梯队
+                        console.log(`验证: 梯队 ${tierId} 现在有 ${targetTier.images.length} 张图片`);
+                    }, 50);
+                }, 10);
             }
         }
     }
@@ -836,11 +845,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 saveTiers();
                 renderTiers();
                 
-                // 强制同步图片池
-                forceSyncImagePools();
-                
-                // 重新调整源梯队的高度
+                // 延迟同步图片池，确保渲染完成
                 setTimeout(() => {
+                    forceSyncImagePools();
+                    
+                    // 重新调整源梯队的高度
                     if (sourceTierElement) {
                         adjustTierHeight(sourceTierElement);
                     }
@@ -1036,25 +1045,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         console.log('🔄 开始同步侧边图片池...');
         
-        // 清空侧边图片池
-        sidebarImagePoolContent.innerHTML = '';
+        // 获取当前侧边池中的图片列表
+        const currentSidebarImages = Array.from(sidebarImagePoolContent.children).map(container => {
+            const img = container.querySelector('img');
+            return img ? img.src : null;
+        }).filter(src => src !== null);
         
-        // 复制主图片池中的所有图片到侧边图片池
-        const mainPoolImages = imagePool.children;
+        // 获取主图片池中的图片列表
+        const mainPoolImages = Array.from(imagePool.children).map(container => {
+            const img = container.querySelector('img');
+            return img ? img.src : null;
+        }).filter(src => src !== null);
+        
         console.log(`📊 主图片池中有 ${mainPoolImages.length} 张图片`);
         
-        Array.from(mainPoolImages).forEach(imageContainer => {
-            const img = imageContainer.querySelector('img');
-            if (img) {
-                const clonedContainer = createImageElement(img.src);
-                sidebarImagePoolContent.appendChild(clonedContainer);
+        // 智能同步：只添加缺失的图片，移除多余的图片
+        const imagesToAdd = mainPoolImages.filter(src => !currentSidebarImages.includes(src));
+        const imagesToRemove = currentSidebarImages.filter(src => !mainPoolImages.includes(src));
+        
+        // 移除不存在于主池中的图片
+        imagesToRemove.forEach(src => {
+            const containerToRemove = Array.from(sidebarImagePoolContent.children).find(container => {
+                const img = container.querySelector('img');
+                return img && img.src === src;
+            });
+            if (containerToRemove) {
+                containerToRemove.remove();
             }
+        });
+        
+        // 添加新图片
+        imagesToAdd.forEach(src => {
+            const clonedContainer = createImageElement(src);
+            sidebarImagePoolContent.appendChild(clonedContainer);
         });
         
         console.log(`✅ 侧边图片池同步完成，现有 ${sidebarImagePoolContent.children.length} 张图片`);
         
-        // 为侧边图片池中的图片添加拖拽监听器
-        addDragListenersToImages();
+        // 只为新添加的图片添加拖拽监听器
+        if (imagesToAdd.length > 0) {
+            addDragListenersToImages();
+        }
     }
     
     // 强制同步函数，用于在关键操作后确保同步
@@ -1067,10 +1098,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 监听主图片池的变化，同步到侧边图片池
+    // 监听主图片池的变化，同步到侧边图片池 - 添加防抖机制
+    let syncTimeout = null;
     const observeMainPool = new MutationObserver(() => {
-        if (sidebarPoolOpen) {
-            syncSidebarPool();
+        if (sidebarPoolOpen && !draggedImage) { // 只在非拖拽状态下同步
+            // 防抖：延迟100ms执行同步，避免频繁触发
+            clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(() => {
+                syncSidebarPool();
+            }, 100);
         }
     });
 
